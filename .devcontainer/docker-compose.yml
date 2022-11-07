@@ -1,0 +1,35 @@
+version: '3'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Update the VARIANT arg to pick a version of Go: 1, 1.16, 1.15
+        "VARIANT": "1.19-bullseye"
+        # Options
+        "INSTALL_NODE": "false"
+        "NODE_VERSION": "lts/*"
+    container_name: airbyte_destination_mongo_app
+    volumes:
+    - ..:/workspaces/airbyte_destination_mongo:cached
+    command: sleep infinity
+    # env_file:
+      # Ensure that the variables in .env match the same variables in devcontainer.json
+      # - .env
+    network_mode: service:db
+
+  db:
+    image: mongo:latest
+    container_name: airbyte_destination_mongo_db
+    restart: unless-stopped
+    volumes:
+    - airbyte-destination-mongodb-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: airbyte_destination_mongo_usr
+      MONGO_INITDB_ROOT_PASSWORD: airbyte_destination_mongo_pass
+      MONGO_INITDB_DATABASE: airbyte_destination_mongo_db
+
+volumes:
+  airbyte-destination-mongodb-data:
