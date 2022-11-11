@@ -82,16 +82,19 @@ func (d *destinationMongo) Check(
 	}
 
 	// TODO: Define which context should be used
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(dc.URI))
+	client, disconnect, err := getMongoClient(ctx, dc.URI)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err = client.Disconnect(ctx); err != nil {
-			mw.WriteLog(protocol.LogLevelError, "error disconnecting from database"+err.Error())
+		if err = disconnect(); err != nil {
+			mw.WriteLog(
+				protocol.LogLevelError,
+				"error disconnecting from database"+err.Error(),
+			)
 		}
 	}()
 
@@ -119,4 +122,68 @@ func (d *destinationMongo) Write(
 		return
 	}
 
+	// TODO: Define which context should be used
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, disconnect, err := getMongoClient(ctx, dc.URI)
+	if err != nil {
+		hub.GetErrorChannel() <- err
+		return
+	}
+	defer func() {
+		if err = disconnect(); err != nil {
+			mw.WriteLog(
+				protocol.LogLevelError,
+				"error disconnecting from database"+err.Error(),
+			)
+		}
+	}()
+	database := client.Database(dc.DBName)
+
+	mongoRecordChannel := newMongoRecordChannel()
+	marshalerWorkersDoneChan := make(chan bool)
+	mongoDataStoreWorkersDoneChan := make(chan bool)
+
+	marshaler := newRecordMarshaler(
+		hub,
+		mongoRecordChannel,
+		marshalerWorkersDoneChan,
+	)
+	marshaler.extractProperties(cc.Streams)
+	marshaler.addWorker()
+
+	mongoRepo := newMongoRepository(
+		hub,
+		mongoRecordChannel,
+		mongoDataStoreWorkersDoneChan,
+		database,
+		1000,
+	)
+	mongoRepo.addWorker()
+
+	<-marshalerWorkersDoneChan
+	close(mongoRecordChannel)
+	close(marshalerWorkersDoneChan)
+
+	<-mongoDataStoreWorkersDoneChan
+	close(mongoDataStoreWorkersDoneChan)
+
+	close(hub.GetErrorChannel())
+}
+
+func getMongoClient(
+	ctx context.Context,
+	uri string,
+) (*mongo.Client, func() error, error) {
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	disconnect := func() error {
+		return client.Disconnect(ctx)
+	}
+
+	return client, disconnect, nil
 }
