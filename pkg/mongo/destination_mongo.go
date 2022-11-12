@@ -2,6 +2,7 @@ package mongo
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/theobitoproject/kankuro/pkg/messenger"
@@ -23,8 +24,11 @@ type DestinationMongo struct {
 }
 
 type destinationConfiguration struct {
-	URI                 string `json:"uri"`
+	Host                string `json:"host"`
+	Port                string `json:"port"`
 	DBName              string `json:"db_name"`
+	User                string `json:"user"`
+	Password            string `json:"password"`
 	EnableNormalization bool   `json:"enable_normalization"`
 }
 
@@ -63,24 +67,49 @@ func (d *DestinationMongo) Spec(
 			Description: "This destination writes all data in a Mongo database",
 			Type:        "object",
 			Required: []protocol.PropertyName{
-				"uri",
+				"host",
+				"port",
 				"db_name",
+				"user",
+				"password",
 				"enable_normalization",
 			},
 			Properties: protocol.Properties{
 				Properties: map[protocol.PropertyName]protocol.PropertySpec{
-					"uri": {
-						Title:       "URI",
-						Description: "String format to stablish connection with database",
+					"host": {
+						Title: "Host",
 						PropertyType: protocol.PropertyType{
 							Type: []protocol.PropType{
 								protocol.String,
 							},
 						},
-						Examples: []string{"mongodb://<user>:<password>@<host>:<port>"},
+					},
+					"port": {
+						Title: "Port",
+						PropertyType: protocol.PropertyType{
+							Type: []protocol.PropType{
+								protocol.String,
+							},
+						},
 					},
 					"db_name": {
 						Title: "Database name",
+						PropertyType: protocol.PropertyType{
+							Type: []protocol.PropType{
+								protocol.String,
+							},
+						},
+					},
+					"user": {
+						Title: "User",
+						PropertyType: protocol.PropertyType{
+							Type: []protocol.PropType{
+								protocol.String,
+							},
+						},
+					},
+					"password": {
+						Title: "Password",
 						PropertyType: protocol.PropertyType{
 							Type: []protocol.PropType{
 								protocol.String,
@@ -121,7 +150,7 @@ func (d *DestinationMongo) Check(
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, disconnect, err := getMongoClient(ctx, dc.URI)
+	client, disconnect, err := getMongoClient(ctx, &dc)
 	if err != nil {
 		return err
 	}
@@ -162,7 +191,7 @@ func (d *DestinationMongo) Write(
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, disconnect, err := getMongoClient(ctx, dc.URI)
+	client, disconnect, err := getMongoClient(ctx, &dc)
 	if err != nil {
 		hub.GetErrorChannel() <- err
 		return
@@ -210,8 +239,16 @@ func (d *DestinationMongo) Write(
 
 func getMongoClient(
 	ctx context.Context,
-	uri string,
+	dc *destinationConfiguration,
 ) (*mongo.Client, func() error, error) {
+	uri := fmt.Sprintf(
+		"mongodb://%s:%s@%s:%s",
+		dc.User,
+		dc.Password,
+		dc.Host,
+		dc.Port,
+	)
+
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
 	if err != nil {
 		return nil, nil, err
