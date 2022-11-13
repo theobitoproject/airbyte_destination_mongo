@@ -12,6 +12,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
+const (
+	// TODO: is there are best way to handle the amount of workers?
+	marshalerWorkers    = 4
+	mongoHandlerWorkers = 4
+)
+
 // DestinationMongo is the Airbyte destination connector
 // to store data in Mongo databases
 type DestinationMongo struct {
@@ -83,6 +89,7 @@ func (d *DestinationMongo) Spec(
 								protocol.String,
 							},
 						},
+						Order: 1,
 					},
 					"port": {
 						Title: "Port",
@@ -91,6 +98,7 @@ func (d *DestinationMongo) Spec(
 								protocol.String,
 							},
 						},
+						Order: 2,
 					},
 					"db_name": {
 						Title: "Database name",
@@ -99,6 +107,7 @@ func (d *DestinationMongo) Spec(
 								protocol.String,
 							},
 						},
+						Order: 3,
 					},
 					"user": {
 						Title: "User",
@@ -107,6 +116,7 @@ func (d *DestinationMongo) Spec(
 								protocol.String,
 							},
 						},
+						Order: 4,
 					},
 					"password": {
 						Title: "Password",
@@ -115,14 +125,18 @@ func (d *DestinationMongo) Spec(
 								protocol.String,
 							},
 						},
+						IsSecret: true,
+						Order:    5,
 					},
 					"enable_basic_normalization": {
-						Title: "Enable normalization",
+						Title:       "Enable basic normalization",
+						Description: "(temporary) It adds basic normalization for the stored data",
 						PropertyType: protocol.PropertyType{
 							Type: []protocol.PropType{
 								protocol.Boolean,
 							},
 						},
+						Order: 6,
 					},
 				},
 			},
@@ -206,15 +220,23 @@ func (d *DestinationMongo) Write(
 	}()
 	database := client.Database(dc.DBName)
 
-	d.marshaler.AddWorker(hub, cc, dc.EnableBasicNormalization)
+	for i := 0; i < marshalerWorkers; i++ {
+		d.marshaler.AddWorker(hub, cc, dc.EnableBasicNormalization)
+	}
 
-	d.mongoHandler.AddWorker(hub, database)
+	for i := 0; i < mongoHandlerWorkers; i++ {
+		d.mongoHandler.AddWorker(hub, database)
+	}
 
-	<-d.marshalerWorkersChan
+	for i := 0; i < marshalerWorkers; i++ {
+		<-d.marshalerWorkersChan
+	}
 	close(d.docChan)
 	close(d.marshalerWorkersChan)
 
-	<-d.mongoHandlerWorkersChan
+	for i := 0; i < mongoHandlerWorkers; i++ {
+		<-d.mongoHandlerWorkersChan
+	}
 	close(d.mongoHandlerWorkersChan)
 
 	close(hub.GetErrorChannel())

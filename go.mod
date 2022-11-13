@@ -3,7 +3,7 @@ module github.com/theobitoproject/airbyte_destination_mongo
 go 1.19
 
 require (
-	github.com/theobitoproject/kankuro v1.24.0
+	github.com/theobitoproject/kankuro v1.25.0
 	go.mongodb.org/mongo-driver v1.11.0
 )
 

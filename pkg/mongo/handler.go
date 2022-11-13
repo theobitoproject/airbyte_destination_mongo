@@ -12,10 +12,7 @@ import (
 type Handler interface {
 	// AddWorker adds a new thread to add the document to a batch
 	// and store the data when necessary
-	AddWorker(
-		messenger.ChannelHub,
-		*mongo.Database,
-	)
+	AddWorker(messenger.ChannelHub, *mongo.Database)
 }
 
 type handler struct {
@@ -25,6 +22,7 @@ type handler struct {
 	collectionHandlers map[string]*collectionHandler
 	mu                 *sync.Mutex
 	batchSize          int
+	workersAmount      int
 }
 
 // NewHandler creates a new instance of Handler
@@ -39,6 +37,7 @@ func NewHandler(
 		collectionHandlers: map[string]*collectionHandler{},
 		mu:                 &sync.Mutex{},
 		batchSize:          batchSize,
+		workersAmount:      0,
 	}
 }
 
@@ -48,16 +47,19 @@ func (h *handler) AddWorker(
 	hub messenger.ChannelHub,
 	database *mongo.Database,
 ) {
+	h.workersAmount++
+
 	go func() {
 		for {
 			doc, channelOpen := <-h.documentChannel
+			h.mu.Lock()
+
 			if !channelOpen {
-				h.flushAll(hub)
 				h.removeWorker()
+				h.flushAll(hub)
+				h.mu.Unlock()
 				return
 			}
-
-			h.mu.Lock()
 
 			cc, err := h.getCollectionConnForStream(database, doc.stream)
 			if err != nil {
@@ -86,6 +88,11 @@ func (h *handler) AddWorker(
 }
 
 func (h *handler) flushAll(hub messenger.ChannelHub) {
+	if h.workersAmount > 1 {
+		// flush all only when all workers are removed
+		return
+	}
+
 	for _, cc := range h.collectionHandlers {
 		if len(cc.records) == 0 {
 			continue
@@ -102,6 +109,7 @@ func (h *handler) flushAll(hub messenger.ChannelHub) {
 
 func (h *handler) removeWorker() {
 	h.workersDoneChan <- true
+	h.workersAmount--
 }
 
 func (h *handler) getCollectionConnForStream(
