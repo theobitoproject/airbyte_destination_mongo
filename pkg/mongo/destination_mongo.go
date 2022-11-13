@@ -24,12 +24,12 @@ type DestinationMongo struct {
 }
 
 type destinationConfiguration struct {
-	Host                string `json:"host"`
-	Port                string `json:"port"`
-	DBName              string `json:"db_name"`
-	User                string `json:"user"`
-	Password            string `json:"password"`
-	EnableNormalization bool   `json:"enable_normalization"`
+	Host                     string `json:"host"`
+	Port                     string `json:"port"`
+	DBName                   string `json:"db_name"`
+	User                     string `json:"user"`
+	Password                 string `json:"password"`
+	EnableBasicNormalization bool   `json:"enable_basic_normalization"`
 }
 
 // NewDestinationMongo creates a new instance of DestinationMongo
@@ -72,7 +72,7 @@ func (d *DestinationMongo) Spec(
 				"db_name",
 				"user",
 				"password",
-				"enable_normalization",
+				"enable_basic_normalization",
 			},
 			Properties: protocol.Properties{
 				Properties: map[protocol.PropertyName]protocol.PropertySpec{
@@ -116,7 +116,7 @@ func (d *DestinationMongo) Spec(
 							},
 						},
 					},
-					"enable_normalization": {
+					"enable_basic_normalization": {
 						Title: "Enable normalization",
 						PropertyType: protocol.PropertyType{
 							Type: []protocol.PropType{
@@ -206,25 +206,8 @@ func (d *DestinationMongo) Write(
 	}()
 	database := client.Database(dc.DBName)
 
-	// mongoRecordChannel := newMongoRecordChannel()
-	// marshalerWorkersDoneChan := make(chan bool)
-	// mongoDataStoreWorkersDoneChan := make(chan bool)
+	d.marshaler.AddWorker(hub, cc, dc.EnableBasicNormalization)
 
-	// marshaler := newRecordMarshaler(
-	// 	hub,
-	// 	mongoRecordChannel,
-	// 	marshalerWorkersDoneChan,
-	// )
-	// marshaler.extractProperties(cc.Streams)
-	d.marshaler.AddWorker(hub)
-
-	// mongoRepo := newMongoRepository(
-	// 	hub,
-	// 	mongoRecordChannel,
-	// 	mongoDataStoreWorkersDoneChan,
-	// 	database,
-	// 	1000,
-	// )
 	d.mongoHandler.AddWorker(hub, database)
 
 	<-d.marshalerWorkersChan
